@@ -1,0 +1,136 @@
+name: Build Custom Bootstrap
+
+on:
+  workflow_dispatch:
+    inputs:
+      package_name:
+        description: "Package name (e.g., com.agentclaw)"
+        required: true
+        default: "com.agentclaw"
+      minimal_bootstrap:
+        description: "Minimal bootstrap (exclude large packages)"
+        required: false
+        type: boolean
+        default: false
+      ssh_server:
+        description: "Bundle SSH server with default password 'changeme'"
+        required: false
+        type: boolean
+        default: false
+
+env:
+  ARCHITECTURE: aarch64
+  TERMUX_TYPE: f-droid
+  FULL_PACKAGES: "git,curl,wget,nano,tmux,htop,jq,ca-certificates,openssl-tool,openssh,screen,pacman,nodejs-lts,python,build-essential,clang,cmake,make,autoconf,automake,libtool,pkg-config,gradle,openjdk-17,binutils,gdb,unzip,p7zip,sqlite"
+  MINIMAL_PACKAGES: "git,curl,wget,nano,tmux,htop,jq,ca-certificates,openssl-tool,openssh,screen,pacman"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+      
+      - name: Cache termux-packages build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.termux-build
+            termux-packages/build
+            termux-packages/output
+          key: termux-${{ env.ARCHITECTURE }}-${{ github.run_number }}
+          restore-keys: termux-${{ env.ARCHITECTURE }}-
+      
+      - name: Set package name
+        run: echo "TERMUX_APP__PACKAGE_NAME=--name ${{ github.event.inputs.package_name }}" >> $GITHUB_ENV
+      
+      - name: Set packages (full or minimal)
+        id: bootstrap_type
+        run: |
+          if [ "${{ github.event.inputs.minimal_bootstrap }}" = "true" ]; then
+            echo "ADDITIONAL_PACKAGES=--add $MINIMAL_PACKAGES" >> $GITHUB_ENV
+            echo "BOOTSTRAP_TYPE=minimal" >> $GITHUB_OUTPUT
+          else
+            echo "ADDITIONAL_PACKAGES=--add $FULL_PACKAGES" >> $GITHUB_ENV
+            echo "BOOTSTRAP_TYPE=full" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Set SSH server
+        if: "${{ github.event.inputs.ssh_server == 'true' }}"
+        run: echo "ENABLE_SSH=--enable-ssh-server" >> $GITHUB_ENV
+      
+      - name: Build Bootstrap
+        run: |
+          ./build-termux.sh \
+            $TERMUX_APP__PACKAGE_NAME \
+            --architectures $ARCHITECTURE \
+            --type $TERMUX_TYPE \
+            $ADDITIONAL_PACKAGES \
+            $ENABLE_SSH \
+            --disable-terminal \
+            --disable-tasker \
+            --disable-float \
+            --disable-widget \
+            --disable-api \
+            --disable-boot \
+            --disable-styling \
+            --disable-gui \
+            --disable-x11
+      
+      - name: List built files
+        run: ls -lah *.apk *.zip 2>/dev/null || find . -maxdepth 1 -type f \(-name "*.apk" -o -name "*.zip" \)
+      
+      - name: Extract bootstrap from APK
+        run: |
+          APK=$(ls *.apk 2>/dev/null | head -1)
+          if [ -n "$APK" ]; then
+            mkdir -p bootstrap
+            unzip -j "$APK" "assets/bootstrap-${ARCHITECTURE}.zip" -d bootstrap/ && ls -la bootstrap/
+          fi
+      
+      - name: Verify no com.termux references
+        run: |
+          for z in bootstrap/*.zip; do
+            [ -f "$z" ] || continue
+            unzip -q "$z" -d verify_$$
+            if grep -r "com\.termux" verify_$$/ 2>/dev/null; then
+              echo "❌ FAILED: Found com.termux references!"
+              exit 1
+            fi
+            echo "✅ No com.termux references in $z"
+            rm -rf verify_$$
+          done
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootstrap-${{ github.event.inputs.package_name }}-${{ steps.bootstrap_type.outputs.BOOTSTRAP_TYPE }}
+          path: |
+            bootstrap/*.zip
+            ./*.apk
+          retention-days: 90
+      
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}-${{ github.event.inputs.package_name }}
+          name: Bootstrap ${{ github.event.inputs.package_name }} (${{ steps.bootstrap_type.outputs.BOOTSTRAP_TYPE }})
+          files: |
+            bootstrap/*.zip
+            ./*.apk
+          body: |
+            ## Bootstrap for `${{ github.event.inputs.package_name }}`
+            
+            | Setting | Value |
+            |---------|-------|
+            | Package | `${{ github.event.inputs.package_name }}` |
+            | Arch | `${{ env.ARCHITECTURE }}` |
+            | Type | `${{ steps.bootstrap_type.outputs.BOOTSTRAP_TYPE }}` |
+            | SSH | `${{ github.event.inputs.ssh_server }}` |
+            
+            Extract to: `/data/data/${{ github.event.inputs.package_name }}/files/`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
