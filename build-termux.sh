@@ -133,7 +133,7 @@ while (($# > 0)); do
             else
                 echo "[!] Option '--architectures' requires an argument."
                 show_usage
-                return 1
+                exit 1
             fi
             ;;
         -p|--plugin)
@@ -213,7 +213,7 @@ if [ -z "${DO_NOT_CLEAN}" ]; then
     fi
 fi
 
-if [[ "$TERMUX_APP_TYPE" == "f-droid" ]] || [ -z "${DISABLE_TERMINAL}" ]; then
+if [ -z "${DISABLE_TERMINAL}" ]; then
     build_apps
     move_apks
 fi
