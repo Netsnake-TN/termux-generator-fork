@@ -5,7 +5,7 @@
  
  termux_step_pre_configure() {
 +	. "$TERMUX_SCRIPTDIR/scripts/termux_generator_utils.sh"
-+   replace_termux_name "$TERMUX_PKG_SRCDIR" "$TERMUX_APP__PACKAGE_NAME"
++	replace_termux_name "$TERMUX_PKG_SRCDIR" "$TERMUX_APP__PACKAGE_NAME"
 +	echo "Welcome to $TERMUX_APP__PACKAGE_NAME!
 +This is a fork of \"F-Droid\" Termux!
 +Do not report issues with this build upstream!
@@ -28,6 +28,35 @@
  	sed -i'' -E -e "s|\@TERMUX_PREFIX\@|${TERMUX_PREFIX}|g" "$TERMUX_PKG_SRCDIR/am-libexec-packaged"
  	sed -i'' -E -e "s|\@TERMUX_APP_PACKAGE\@|${TERMUX_APP_PACKAGE}|g" "$TERMUX_PKG_SRCDIR/app/src/main/java/com/x11/termux/test/termuxam/FakeContext.java"
  }
+
+--- a/packages/termux-auth/build.sh
++++ b/packages/termux-auth/build.sh
+@@ -10,6 +10,11 @@ TERMUX_PKG_EXTRA_CONFIGURE_ARGS="
+ TERMUX_PKG_AUTO_UPDATE=true
+ 
+ termux_step_post_get_source() {
++	. "$TERMUX_SCRIPTDIR/scripts/termux_generator_utils.sh"
++	for f in termux-auth.c termux-auth.h.in; do
++		if [ -f "$TERMUX_PKG_SRCDIR/$f" ]; then
++			replace_termux_name "$TERMUX_PKG_SRCDIR/$f" "$TERMUX_APP__PACKAGE_NAME"
++		fi
++	done
+ 	sed -i 's/TERMUX_HOME/TERMUX_HOME_TEMPLATE/g' termux-auth.c
+ 	sed -i 's/TERMUX_PREFIX/TERMUX_PREFIX_TEMPLATE/g' termux-auth.c
+ }
+
+--- a/packages/termux-exec/build.sh
++++ b/packages/termux-exec/build.sh
+@@ -8,3 +8,9 @@ TERMUX_PKG_DEPENDS="libc++"
+ TERMUX_PKG_AUTO_UPDATE=true
+ TERMUX_PKG_UPDATE_TAG_TYPE="latest-release-tag"
+ TERMUX_PKG_BUILD_IN_SRC=true
++
++termux_step_post_get_source() {
++	. "$TERMUX_SCRIPTDIR/scripts/termux_generator_utils.sh"
++	replace_termux_name "$TERMUX_PKG_SRCDIR" "$TERMUX_APP__PACKAGE_NAME"
++}
+
 diff --git a/packages/command-not-found/name-change-helper.patch b/packages/command-not-found/name-change-helper.patch
 new file mode 100644
 index 0000000..0250f2e

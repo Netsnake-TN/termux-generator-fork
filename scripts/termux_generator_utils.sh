@@ -24,24 +24,32 @@ replace_termux_name() {
     if [[ "$TERMUX_APP__PACKAGE_NAME" == "com.termux" ]]; then
         return
     fi
-    local targetdir="$1"
+    local target="$1"
     local replacement_name="$2"
     local replacement_name_underscore="$(echo "$replacement_name" | tr . _)"
     local replacement_name_slash="$(echo "$replacement_name" | tr . /)"
 
-    pushd "$targetdir"
-    
-    local file
-    find . -type f -exec file {} + | grep "text" | cut -d: -f1 | while read -r file; do
+    _sed_file() {
         portable_sed_i -e "s|>Termux<|>$replacement_name<|g" \
                        -e "s|\"Termux\"|\"$replacement_name\"|g" \
                        -e "s|Termux:|$replacement_name:|g" \
                        -e "s|com\.termux|$replacement_name|g" \
                        -e "s|com_termux|$replacement_name_underscore|g" \
-                       -e '/http/!s|com/termux|'$replacement_name_slash'|g' "$file"
-    done
+                       -e '/http/!s|com/termux|'$replacement_name_slash'|g' "$1"
+    }
 
-    popd
+    if [[ -f "$target" ]]; then
+        if file "$target" | grep -q "text"; then
+            _sed_file "$target"
+        fi
+    elif [[ -d "$target" ]]; then
+        pushd "$target"
+        local file
+        find . -type f -exec file {} + | grep "text" | cut -d: -f1 | while read -r file; do
+            _sed_file "$file"
+        done
+        popd
+    fi
 }
 
 migrate_termux_folder() {
