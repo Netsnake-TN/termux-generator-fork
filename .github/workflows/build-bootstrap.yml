@@ -138,6 +138,14 @@ jobs:
             exit 1
           fi
       
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootstrap-${{ github.event.inputs.package_name }}-${{ steps.bootstrap_type.outputs.BOOTSTRAP_TYPE }}
+          path: release-artifacts/*
+          retention-days: 90
+          if-no-files-found: error
+      
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
@@ -162,4 +170,3 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        if-no-files-found: error
