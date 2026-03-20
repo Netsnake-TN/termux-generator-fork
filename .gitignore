@@ -4,6 +4,7 @@ termux-*
 *.xz
 *.zip
 tmp
+.release
 
 # https://github.com/github/gitignore/blob/main/Gradle.gitignore
 .gradle
