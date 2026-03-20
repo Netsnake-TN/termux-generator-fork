@@ -48,24 +48,23 @@ jobs:
         uses: actions/checkout@v4
 
       # ── 2. System dependencies ───────────────────────────────────────────────
-      # BUG 5 FIX: explicitly install unzip (required by the verify step)
+      # Note: Android SDK is NOT needed - all builds happen inside Docker container
+      # which has its own SDK. We only need git, patch, unzip for the host.
       - name: Install system dependencies
         shell: bash
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            openjdk-17-jdk \
             git \
             patch \
-            unzip \
-            android-sdk \
-            sdkmanager
+            unzip
 
-          # BUG 4 FIX: export Android SDK paths so build-termux.sh finds them
-          echo "ANDROID_SDK_ROOT=/usr/lib/android-sdk" >> "$GITHUB_ENV"
-          echo "JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))" >> "$GITHUB_ENV"
-          sudo chown -R "$(whoami)" /usr/lib/android-sdk
-          yes | sdkmanager --licenses 2>/dev/null || true
+      # ── 2b. Set CI environment ───────────────────────────────────────────────
+      # Required for free-space.sh to run during build_bootstraps()
+      - name: Set CI environment
+        shell: bash
+        run: |
+          echo "CI=true" >> "$GITHUB_ENV"
 
       # ── 3. Cache termux-packages build ───────────────────────────────────────
       # BUG 3 FIX: key on file hash + arch, not run_number (which is always unique)
