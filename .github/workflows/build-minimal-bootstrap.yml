@@ -1,0 +1,101 @@
+name: Build Minimal Bootstrap
+
+on:
+  workflow_dispatch:
+    inputs:
+      package_name:
+        description: "Package name (e.g., com.agentclaw)"
+        required: true
+        default: "com.agentclaw"
+
+env:
+  ARCHITECTURE: aarch64
+  TERMUX_TYPE: f-droid
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  PACKAGES: "git,curl,wget,nano,tmux,htop,jq,ca-certificates,openssl-tool,openssh,screen"
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    permissions:
+      contents: write
+
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends git patch unzip
+
+      - name: Set CI environment
+        run: echo "CI=true" >> "$GITHUB_ENV"
+
+      - name: Cache build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.termux-build
+            termux-packages/build
+            termux-packages/output
+          key: minimal-${{ env.ARCHITECTURE }}-${{ hashFiles('build-termux.sh') }}
+          restore-keys: minimal-${{ env.ARCHITECTURE }}-
+
+      - name: Build
+        run: |
+          ./build-termux.sh \
+            --name ${{ github.event.inputs.package_name }} \
+            --architectures $ARCHITECTURE \
+            --type $TERMUX_TYPE \
+            --add $PACKAGES \
+            --disable-terminal \
+            --disable-tasker \
+            --disable-float \
+            --disable-widget \
+            --disable-api \
+            --disable-boot \
+            --disable-styling \
+            --disable-gui \
+            --disable-x11
+
+      - name: Collect artifacts
+        id: collect
+        run: |
+          mkdir -p artifacts
+          find . -maxdepth 3 -name "*bootstrap-*.zip" -exec cp {} artifacts/ \; 2>/dev/null || true
+          echo "count=$(ls -A artifacts/ 2>/dev/null | wc -l)" >> "$GITHUB_OUTPUT"
+          ls -lah artifacts/ || echo "No artifacts"
+
+      - name: Upload artifacts
+        if: steps.collect.outputs.count > 0
+        uses: actions/upload-artifact@v4
+        with:
+          name: minimal-bootstrap-${{ github.event.inputs.package_name }}
+          path: artifacts/*
+          retention-days: 90
+
+      - name: Create release
+        if: steps.collect.outputs.count > 0
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}-${{ github.event.inputs.package_name }}-minimal
+          name: Minimal Bootstrap ${{ github.event.inputs.package_name }}
+          files: artifacts/*
+          body: |
+            Minimal bootstrap for `${{ github.event.inputs.package_name }}`
+            
+            Packages: ${{ env.PACKAGES }}
+            Architecture: `${{ env.ARCHITECTURE }}`
+            
+            Extract to: `/data/data/${{ github.event.inputs.package_name }}/files/`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Status
+        run: |
+          if [ "${{ steps.collect.outputs.count }}" -gt 0 ]; then
+            echo "✅ Success - ${{ steps.collect.outputs.count }} artifact(s)"
+          else
+            echo "❌ Failed - no artifacts"
+            exit 1
+          fi
