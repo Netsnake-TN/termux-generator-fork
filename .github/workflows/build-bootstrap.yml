@@ -21,6 +21,7 @@ on:
 env:
   ARCHITECTURE: aarch64
   TERMUX_TYPE: f-droid
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   FULL_PACKAGES: "git,curl,wget,nano,tmux,htop,jq,ca-certificates,openssl-tool,openssh,screen,pacman,nodejs-lts,python,build-essential,clang,cmake,make,autoconf,automake,libtool,pkg-config,gradle,openjdk-17,binutils,gdb,unzip,p7zip,sqlite"
   MINIMAL_PACKAGES: "git,curl,wget,nano,tmux,htop,jq,ca-certificates,openssl-tool,openssh,screen,pacman"
 
@@ -80,24 +81,58 @@ jobs:
             --disable-gui \
             --disable-x11
       
-      - name: List built files
-        run: ls -lah *.apk *.zip 2>/dev/null || find . -maxdepth 1 -type f \( -name "*.apk" -o -name "*.zip" \)
-      
-      - name: Extract bootstrap from APK
+      - name: List all built files
         run: |
-          APK=$(ls *.apk 2>/dev/null | head -1)
-          if [ -n "$APK" ]; then
-            mkdir -p bootstrap
-            unzip -j "$APK" "assets/bootstrap-${ARCHITECTURE}.zip" -d bootstrap/ && ls -la bootstrap/
+          echo "=== Files in root directory ==="
+          ls -lah *.apk *.zip 2>/dev/null || echo "No apk/zip in root"
+          echo ""
+          echo "=== All zip files ==="
+          find . -maxdepth 2 -name "*.zip" -type f 2>/dev/null
+          echo ""
+          echo "=== All apk files ==="
+          find . -maxdepth 2 -name "*.apk" -type f 2>/dev/null
+      
+      - name: Prepare artifacts
+        run: |
+          mkdir -p artifacts
+          
+          # When --disable-terminal is used, bootstrap zips are in root directory
+          # with naming: {package_name}-{type}-bootstrap-{arch}.zip
+          for z in *.zip; do
+            [ -f "$z" ] || continue
+            cp "$z" artifacts/
+            echo "Found bootstrap in root: $z"
+          done
+          
+          # Also check for APKs
+          for a in *.apk; do
+            [ -f "$a" ] || continue
+            cp "$a" artifacts/
+            echo "Found APK: $a"
+          done
+          
+          # Try extracting from APK if no bootstrap found in root
+          if [ -z "$(ls artifacts/*.zip 2>/dev/null)" ]; then
+            echo "No bootstrap zip in root, checking APK assets..."
+            APK=$(ls *.apk 2>/dev/null | head -1)
+            if [ -n "$APK" ]; then
+              echo "Extracting bootstrap from $APK"
+              unzip -j "$APK" "assets/bootstrap-${ARCHITECTURE}.zip" -d artifacts/ && \
+                echo "Extracted bootstrap-${ARCHITECTURE}.zip from APK"
+            fi
           fi
+          
+          echo ""
+          echo "=== Final artifacts ==="
+          ls -lah artifacts/ || echo "No artifacts found!"
       
       - name: Verify no com.termux references
         run: |
-          for z in bootstrap/*.zip; do
+          for z in artifacts/*.zip; do
             [ -f "$z" ] || continue
             unzip -q "$z" -d verify_$$
             if grep -r "com\.termux" verify_$$/ 2>/dev/null; then
-              echo "❌ FAILED: Found com.termux references!"
+              echo "❌ FAILED: Found com.termux references in $z!"
               exit 1
             fi
             echo "✅ No com.termux references in $z"
@@ -108,19 +143,16 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bootstrap-${{ github.event.inputs.package_name }}-${{ steps.bootstrap_type.outputs.BOOTSTRAP_TYPE }}
-          path: |
-            bootstrap/*.zip
-            ./*.apk
+          path: artifacts/*
           retention-days: 90
+          if-no-files-found: error
       
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}-${{ github.event.inputs.package_name }}
           name: Bootstrap ${{ github.event.inputs.package_name }} (${{ steps.bootstrap_type.outputs.BOOTSTRAP_TYPE }})
-          files: |
-            bootstrap/*.zip
-            ./*.apk
+          files: artifacts/*
           body: |
             ## Bootstrap for `${{ github.event.inputs.package_name }}`
             
