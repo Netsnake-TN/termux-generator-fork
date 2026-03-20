@@ -21,53 +21,32 @@ on:
 env:
   ARCHITECTURE: aarch64
   TERMUX_TYPE: f-droid
-  # BUG 8 FIX: initialise to empty so the variable is always defined
   ENABLE_SSH: ""
-  # NOTE: FORCE_JAVASCRIPT_ACTIONS_TO_NODE24 moved to a dedicated step (BUG 7 FIX)
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   FULL_PACKAGES: "git,curl,wget,nano,tmux,htop,jq,ca-certificates,openssl-tool,openssh,screen,nodejs-lts,python,build-essential,clang,cmake,make,autoconf,automake,libtool,pkg-config,gradle,openjdk-17,binutils,gdb,unzip,p7zip,sqlite"
-  # BUG 2 FIX: removed 'pacman' — it is not a Termux package; also removed from MINIMAL below
   MINIMAL_PACKAGES: "git,curl,wget,nano,tmux,htop,jq,ca-certificates,openssl-tool,openssh,screen"
 
 jobs:
   build:
-    # BUG 4 FIX: pinned to 22.04 — android-sdk apt packages work here reliably
     runs-on: ubuntu-22.04
-    # BUG 6 FIX: hard cap at 6 hours to avoid silent quota drain on hung builds
     timeout-minutes: 360
     permissions:
       contents: write
 
     steps:
-      # ── 0. Force Node 24 for actions runtime (BUG 7 FIX) ────────────────────
-      - name: Configure actions runtime
-        shell: bash
-        run: echo "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true" >> "$GITHUB_ENV"
-
-      # ── 1. Checkout ──────────────────────────────────────────────────────────
       - name: Clone repository
         uses: actions/checkout@v4
 
-      # ── 2. System dependencies ───────────────────────────────────────────────
-      # Note: Android SDK is NOT needed - all builds happen inside Docker container
-      # which has its own SDK. We only need git, patch, unzip for the host.
       - name: Install system dependencies
         shell: bash
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            git \
-            patch \
-            unzip
+          sudo apt-get install -y --no-install-recommends git patch unzip
 
-      # ── 2b. Set CI environment ───────────────────────────────────────────────
-      # Required for free-space.sh to run during build_bootstraps()
       - name: Set CI environment
         shell: bash
-        run: |
-          echo "CI=true" >> "$GITHUB_ENV"
+        run: echo "CI=true" >> "$GITHUB_ENV"
 
-      # ── 3. Cache termux-packages build ───────────────────────────────────────
-      # BUG 3 FIX: key on file hash + arch, not run_number (which is always unique)
       - name: Cache termux-packages build
         uses: actions/cache@v4
         with:
@@ -76,15 +55,12 @@ jobs:
             termux-packages/build
             termux-packages/output
           key: termux-${{ env.ARCHITECTURE }}-${{ hashFiles('build-termux.sh') }}
-          restore-keys: |
-            termux-${{ env.ARCHITECTURE }}-
+          restore-keys: termux-${{ env.ARCHITECTURE }}-
 
-      # ── 4. Set package name ──────────────────────────────────────────────────
       - name: Set package name
         shell: bash
         run: echo "TERMUX_APP__PACKAGE_NAME=--name ${{ github.event.inputs.package_name }}" >> "$GITHUB_ENV"
 
-      # ── 5. Set packages (full or minimal) ────────────────────────────────────
       - name: Set packages
         id: bootstrap_type
         shell: bash
@@ -97,14 +73,11 @@ jobs:
             echo "BOOTSTRAP_TYPE=full" >> "$GITHUB_OUTPUT"
           fi
 
-      # ── 6. Set SSH server ────────────────────────────────────────────────────
-      # BUG 1 FIX: removed quotes around the expression — "false" string is truthy
       - name: Set SSH server flag
         if: github.event.inputs.ssh_server == 'true'
         shell: bash
         run: echo "ENABLE_SSH=--enable-ssh-server" >> "$GITHUB_ENV"
 
-      # ── 7. Build ─────────────────────────────────────────────────────────────
       - name: Build Bootstrap
         shell: bash
         run: |
@@ -124,22 +97,16 @@ jobs:
             --disable-gui \
             --disable-x11
 
-      # ── 8. List and check built files ────────────────────────────────────────
-      # Non-blocking: always shows what was built, sets output for downstream steps
-      - name: List and check built files
+      - name: List built files
         id: check_files
         shell: bash
         run: |
           echo "=== Files in root directory ==="
           ls -lah *.apk *.zip 2>/dev/null || echo "No apk/zip in root"
           echo ""
-          echo "=== All bootstrap zips (naming: {package}-{type}-bootstrap-{arch}.zip) ==="
+          echo "=== Bootstrap zips ==="
           find . -maxdepth 3 -name "*bootstrap-*.zip" -type f 2>/dev/null || echo "No bootstrap zips found"
-          echo ""
-          echo "=== All zip files ==="
-          find . -maxdepth 3 -name "*.zip" -type f 2>/dev/null || echo "No zips found"
-          
-          # Set output for downstream steps
+
           BOOTSTRAP_COUNT=$(find . -maxdepth 3 -name "*bootstrap-*.zip" -type f 2>/dev/null | wc -l)
           if [ "$BOOTSTRAP_COUNT" -gt 0 ]; then
             echo "bootstrap_found=true" >> "$GITHUB_OUTPUT"
@@ -149,13 +116,10 @@ jobs:
             echo "⚠️ No bootstrap files found"
           fi
 
-      # ── 9. Verify no com.termux references ──────────────────────────────────
-      # Non-blocking: warns but doesn't fail the build
       - name: Verify no com.termux references
         continue-on-error: true
         shell: bash
         run: |
-          FOUND_ISSUES=0
           for z in $(find . -maxdepth 3 -name "*bootstrap-*.zip"); do
             [ -f "$z" ] || continue
             echo "Checking: $z"
@@ -163,44 +127,33 @@ jobs:
             unzip -q "$z" -d "verify_$$"
             if grep -r "com\.termux" "verify_$$/" 2>/dev/null; then
               echo "⚠️ WARNING: Found com.termux references in $z"
-              FOUND_ISSUES=1
+              echo "::warning::Some bootstrap files contain com.termux references"
             else
               echo "✅ Clean: $z"
             fi
             rm -rf "verify_$$"
           done
-          if [ "$FOUND_ISSUES" -eq 1 ]; then
-            echo "::warning::Some bootstrap files contain com.termux references"
-          fi
 
-      # ── 10. Prepare artifacts ────────────────────────────────────────────────
-      # Always runs to collect whatever was built
-      - name: Prepare artifacts for release
+      - name: Prepare artifacts
         id: prepare_artifacts
         shell: bash
         run: |
           mkdir -p release-artifacts
-
-          # Collect bootstrap zips
           find . -maxdepth 3 -name "*bootstrap-*.zip" -exec cp {} release-artifacts/ \; 2>/dev/null || true
-          # Collect APKs
           find . -maxdepth 3 -name "*.apk" -exec cp {} release-artifacts/ \; 2>/dev/null || true
 
-          echo "=== Final release artifacts ==="
-          ls -lah release-artifacts/ || echo "No artifacts directory"
+          echo "=== Release artifacts ==="
+          ls -lah release-artifacts/ || echo "No artifacts"
 
           ARTIFACT_COUNT=$(ls -A release-artifacts/ 2>/dev/null | wc -l)
           echo "artifact_count=$ARTIFACT_COUNT" >> "$GITHUB_OUTPUT"
           
           if [ "$ARTIFACT_COUNT" -eq 0 ]; then
-            echo "⚠️ WARNING: No artifacts to release!"
             echo "has_artifacts=false" >> "$GITHUB_OUTPUT"
           else
-            echo "✅ Prepared $ARTIFACT_COUNT artifact(s)"
             echo "has_artifacts=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # ── 11. Upload artifacts ─────────────────────────────────────────────────
       - name: Upload artifacts
         if: steps.prepare_artifacts.outputs.has_artifacts == 'true'
         uses: actions/upload-artifact@v4
@@ -209,7 +162,6 @@ jobs:
           path: release-artifacts/*
           retention-days: 90
 
-      # ── 12. Create release ───────────────────────────────────────────────────
       - name: Create release
         if: steps.prepare_artifacts.outputs.has_artifacts == 'true'
         uses: softprops/action-gh-release@v2
@@ -228,15 +180,11 @@ jobs:
             | SSH Server | `${{ github.event.inputs.ssh_server }}` |
 
             **Extract to:** `/data/data/${{ github.event.inputs.package_name }}/files/`
-
-            **Build Info:**
-            - Run #${{ github.run_number }}
           draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── 13. Final status ─────────────────────────────────────────────────────
       - name: Final status
         shell: bash
         run: |
@@ -247,4 +195,3 @@ jobs:
             echo "❌ Build failed - no artifacts were generated"
             exit 1
           fi
-
