@@ -132,32 +132,33 @@ jobs:
           echo "=== Files in root directory ==="
           ls -lah *.apk *.zip 2>/dev/null || echo "No apk/zip in root"
           echo ""
-          echo "=== Searching for bootstrap zips recursively ==="
-          find . -maxdepth 3 -name "bootstrap-*.zip" -type f 2>/dev/null || echo "No bootstrap zips found"
+          echo "=== All bootstrap zips (naming: {package}-{type}-bootstrap-{arch}.zip) ==="
+          find . -maxdepth 3 -name "*bootstrap-*.zip" -type f 2>/dev/null || echo "No bootstrap zips found"
           echo ""
           echo "=== All zip files ==="
           find . -maxdepth 3 -name "*.zip" -type f 2>/dev/null || echo "No zips found"
 
       # ── 9. Check bootstrap generation ────────────────────────────────────────
+      # Pattern matches {package}-{type}-bootstrap-{arch}.zip naming from move_bootstraps()
       - name: Check bootstrap generation
         shell: bash
         run: |
           echo "Checking for bootstrap ZIPs..."
-          if ! find . -maxdepth 3 -name "bootstrap-*.zip" 2>/dev/null | grep -q .; then
+          if ! find . -maxdepth 3 -name "*bootstrap-*.zip" 2>/dev/null | grep -q .; then
             echo "❌ ERROR: No bootstrap files generated!"
             echo "Available files:"
             find . -maxdepth 3 -type f \( -name "*.zip" -o -name "*.apk" \)
             exit 1
           fi
           echo "✅ Bootstrap files found!"
-          find . -maxdepth 3 -name "bootstrap-*.zip" -exec ls -lah {} \;
+          find . -maxdepth 3 -name "*bootstrap-*.zip" -exec ls -lah {} \;
 
       # ── 10. Verify no com.termux references ──────────────────────────────────
       # BUG 5 FIX: unzip is now guaranteed installed (step 2)
       - name: Verify no com.termux references
         shell: bash
         run: |
-          for z in $(find . -maxdepth 3 -name "bootstrap-*.zip"); do
+          for z in $(find . -maxdepth 3 -name "*bootstrap-*.zip"); do
             [ -f "$z" ] || continue
             echo "Checking: $z"
             mkdir -p "verify_$$"
@@ -177,7 +178,7 @@ jobs:
         run: |
           mkdir -p release-artifacts
 
-          find . -maxdepth 3 -name "bootstrap-*.zip" -exec cp {} release-artifacts/ \;
+          find . -maxdepth 3 -name "*bootstrap-*.zip" -exec cp {} release-artifacts/ \;
           find . -maxdepth 3 -name "*.apk" -exec cp {} release-artifacts/ \; 2>/dev/null || true
 
           echo "=== Final release artifacts ==="
