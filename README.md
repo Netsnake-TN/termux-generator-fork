@@ -1,146 +1,178 @@
-# termux-generator
+# Termux Generator
 
-This script builds a [termux/termux-app](https://github.com/termux/termux-app) or [termux-play-store/termux-apps/termux-app](https://github.com/termux-play-store/termux-apps/tree/main/termux-app) from source, but allows changing the package name from `com.termux` to anything else with a single command.
+Build customized Termux applications from source with modified package names, pre-installed packages, and custom configurations.
 
-## Building Termux in GitHub Actions
+## Why Termux Generator?
 
-1. Fork the repository:
+| Problem | Solution |
+|---------|----------|
+| Can't run multiple Termux instances | Build with unique package names |
+| Need packages pre-installed | Bootstrap includes your packages |
+| Want custom Termux behavior | Apply patches during build |
+| No local build environment | Use GitHub Actions CI/CD |
 
-<img width="189" height="43" alt="image" src="https://github.com/user-attachments/assets/7aa63b58-b8d5-4b30-957b-fd041bee003d" />
+## Quick Start
 
-2. Click the "Actions" tab and enable GitHub Actions:
+### GitHub Actions (Recommended)
 
-<img width="953" height="407" alt="image" src="https://github.com/user-attachments/assets/76561301-61bd-4f58-8511-38d4486e26ac" />
+1. Fork this repository
+2. Go to **Actions** → **Build Custom Bootstrap** → **Run workflow**
+3. Enter your package name (e.g., `com.myapp.termux`)
+4. Download artifacts when build completes
 
-3. Click the "Generate Termux application" workflow, then click the "Run workflow" button and type your desired settings:
-
-<img width="450" height="810" alt="image" src="https://github.com/user-attachments/assets/7b914a69-7654-4150-8e68-4086a10ba3fd" />
-
-4. Click the "Run workflow" button, then wait for your build to complete. If the build is successful, there will be an artifact available to download containing all possible Termux APKs for the combination of settings you selected:
-
-<img width="1148" height="250" alt="image" src="https://github.com/user-attachments/assets/7bbc8338-1c9e-4a34-966f-87a65cadc471" />
-
-
-## Building Termux locally
-
-### Dependencies
-
-- Docker
-- Android SDK
-- OpenJDK 17
-- `git`
-- `patch`
-- `bash`
-
-#### Common Dependencies
-```bash
-sudo apt update
-sudo apt install -y openjdk-17-jdk git patch
-```
-
-#### Android SDK (Ubuntu 20.04 and 22.04)
+### Local Build
 
 ```bash
-sudo apt install -y android-sdk sdkmanager
-```
+# Clone
+git clone https://github.com/Netsnake-TN/termux-generator-fork.git
+cd termux-generator-fork
 
-#### Android SDK (Ubuntu 24.04 and 24.10)
+# Build with custom name
+./build-termux.sh --name com.myapp.termux
 
-```bash
-sudo apt install -y google-android-cmdline-tools-13.0-installer
-```
-
-#### Android SDK common setup
-
-```bash
-echo "export ANDROID_SDK_ROOT=/usr/lib/android-sdk" >> ~/.bashrc && . ~/.bashrc
-sudo chown -R $(whoami) $ANDROID_SDK_ROOT
-yes | sdkmanager --licenses
-```
-
-#### Docker 
-
-> [!NOTE]
-> `docker.io` by Debian/Ubuntu or `docker-ce` by https://docker.com are both acceptable here. This example shows installing `docker.io` - to use Docker CE instead, visit the [docker.com docs for Docker CE](https://docs.docker.com/engine/install/)
-
-```bash
-sudo apt install -y docker.io
-sudo usermod -aG docker $(whoami)
-```
-
-> [!NOTE]
-> Restart your computer or otherwise apply the group change. For me, logging out and logging in was insufficient
-
-```bash
-sudo reboot
-```
-
-### Using termux-generator locally
-
-#### Example: build Termux with the location changed and some popular packages preinstalled
-
-> [!IMPORTANT]
-> Best-case typical time to compile the below example with added packages and only the aarch64 bootstrap: **3 hours**
-
-```bash
-git clone https://github.com/robertkirkman/termux-generator.git
-cd termux-generator
-./build-termux.sh --name a.copy.of.termux.with.the.location.changed \
-    --add clang,make,pkg-config,autoconf,automake,bc,bison,cmake,flex,libtool,m4,git,python-pip,proot-distro \
+# Build with pre-installed packages
+./build-termux.sh --name com.dev.termux \
+    --add clang,cmake,git,python,nodejs-lts \
     --architectures aarch64
 ```
 
-> [!IMPORTANT]
-> Running the command a second time will delete all the modified files and start over. Use `--dirty` if you are troubleshooting.
+## Requirements
 
+| Requirement | Local Build | GitHub Actions |
+|-------------|-------------|----------------|
+| Docker | Required | Pre-installed |
+| git, patch, bash | Required | Pre-installed |
+| Android SDK | Required | Not needed |
+| OpenJDK 17 | Required | Not needed |
 
-#### Example: build Termux with SSH server enabled by default and install it through ADB
-
-> [!NOTE]
-> - This technique can be used to bootstrap from ADB access into full SSH access through Termux, without any access to a display or touchscreen.
-> - This might be useful on devices that have **no screen or a broken screen**.
-> - If you install Termux:Boot or build with `--type play-store` (which comes with Termux:Boot already built into the same APK as the main Google Play Termux APK), then the SSH server will also autolaunch every time the device is first unlocked after rebooting.
-> - `adb forward tcp:8022 tcp:8022` is only necessary for:
->   - If you prefer to use SSH through USB connection and/or ADB connection
->   - If your device doesn't have network connectivity other than ADB
->   - If your ADB connection is itself being forwarded through a tunnel or firewall that you don't have set up for SSH
+## Command Reference
 
 ```bash
-git clone https://github.com/robertkirkman/termux-generator.git
-cd termux-generator
-./build-termux.sh --enable-ssh-server
-adb install com.termux-f-droid-termux-app_apt-android-7-debug_universal.apk
-adb install com.termux-f-droid-termux-boot-app_v0.8.1+debug.apk
-adb shell am start -n com.termux.boot/.BootActivity
-adb shell am start -n com.termux/.app.TermuxActivity
-adb forward tcp:8022 tcp:8022 # use only if needed
-ssh -p 8022 localhost # if not using 'adb forward', replace 'localhost' with device's LAN IP
-# default password is 'changeme'
-passwd # change the default password
+./build-termux.sh [options]
 ```
 
-#### Example: build Termux with the location changed and XFCE preinstalled
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-n, --name` | `com.termux` | Custom package name |
+| `-t, --type` | `f-droid` | Build type (`f-droid` or `play-store`) |
+| `-a, --add` | `xkeyboard-config` | Comma-separated packages to pre-install |
+| `--architectures` | `aarch64,x86_64,arm,i686` | Target architectures |
+| `--enable-ssh-server` | disabled | Bundle SSH server (f-droid only) |
+| `-d, --dirty` | disabled | Skip cleanup for troubleshooting |
 
-> [!TIP]
-> `--type play-store` is compatible with Termux:X11, but unlike `--type f-droid`, it doesn't currently have a second-stage bootstrap, so if using `--type play-store` with XFCE, it might be necessary to run some commands to grant executable permission manually before launching XFCE, like these:
-> 
-> ```
-> chmox +x $PREFIX/lib/xfce4/xfconf/xfconfd
-> chmod +x $PREFIX/lib/xfce4/session/xfsm-shutdown-helper
-> chmod +x $PREFIX/lib/xfce4/panel/migrate
-> chmod +x $PREFIX/lib/xfce4/notifyd/xfce4-notifyd
-> ```
+### Disable Flags
 
 ```bash
-git clone https://github.com/robertkirkman/termux-generator.git
-cd termux-generator
-./build-termux.sh  --add valac,thunar,xfce4-panel,xfce4-session,xfce4-settings,xfconf,xfwm4,xfce4-notifyd,xfce4-terminal,xfdesktop,xfce4 \
-                   --architectures aarch64,x86_64 \
-                   --name two.termux
+--disable-terminal    # Skip main Termux app
+--disable-bootstrap   # Skip bootstrap archive
+--disable-x11         # Skip Termux:X11
+--disable-tasker      # Skip Termux:Tasker
+--disable-float       # Skip Termux:Float
+--disable-widget      # Skip Termux:Widget
+--disable-api         # Skip Termux:API
+--disable-boot        # Skip Termux:Boot
+--disable-styling     # Skip Termux:Styling
+--disable-gui         # Skip Termux:GUI
 ```
 
-- After installing both the main app and the X11 app that appear after building, use this command to launch XFCE:
+## Use Cases
+
+### Multiple Termux Instances
 
 ```bash
+# Build first instance
+./build-termux.sh --name com.work.termux
+
+# Build second instance  
+./build-termux.sh --name com.personal.termux
+```
+
+### Headless Device Setup
+
+```bash
+# Build with SSH server
+./build-termux.sh --name com.headless.termux --enable-ssh-server
+
+# Install via ADB
+adb install com.headless-f-droid-termux-app_*.apk
+adb shell am start -n com.headless.termux/.app.TermuxActivity
+
+# Connect (default password: changeme)
+ssh -p 8022 user@device-ip
+```
+
+### Development Environment
+
+```bash
+./build-termux.sh --name com.dev.termux \
+    --add clang,cmake,make,git,python,nodejs-lts,openjdk-17,gradle \
+    --architectures aarch64
+```
+
+### GUI Desktop (XFCE)
+
+```bash
+./build-termux.sh --name com.desktop.termux \
+    --add xfce4,xfce4-terminal,thunar,xfconf,xfwm4,xfdesktop \
+    --architectures aarch64
+
+# After install, launch with:
 termux-x11 -xstartup xfce4-session &
 ```
+
+## Package Name Rules
+
+- No underscores (`_`) or dashes (`-`)
+- Cannot contain `com.termux` as substring
+- Cannot use Java keywords: `package`, `in`, `is`, `as`
+
+**Valid:** `com.myapp.termux`, `org.custom.shell`
+
+**Invalid:** `com.termux.test`, `com.my_app`, `com.my-app`
+
+## Output Files
+
+| Pattern | Description |
+|---------|-------------|
+| `{name}-{type}-termux-app_*.apk` | Main Termux app |
+| `{name}-{type}-termux-x11_*.apk` | Termux:X11 |
+| `{name}-{type}-termux-tasker_*.apk` | Termux:Tasker |
+| `{name}-{type}-bootstrap-{arch}.zip` | Bootstrap archive |
+
+## Build Times
+
+| Configuration | Estimated Time |
+|---------------|----------------|
+| Minimal (no extra packages) | 30-60 minutes |
+| Typical (clang, git, python) | 2-3 hours |
+| Full development environment | 3-4 hours |
+
+## Project Structure
+
+```
+termux-generator-fork/
+├── build-termux.sh           # Main entry point
+├── scripts/
+│   ├── termux_generator_steps.sh  # Build steps
+│   └── termux_generator_utils.sh  # Utilities
+├── f-droid-patches/
+│   ├── app-patches/          # Termux app patches
+│   └── bootstrap-patches/    # Bootstrap patches
+└── .github/workflows/
+    └── build-bootstrap.yml   # CI/CD workflow
+```
+
+## Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| Build fails | Try `--dirty` to reuse artifacts |
+| Docker issues | Run `docker system prune -a` |
+| Out of disk space | Remove old builds |
+| Patch conflicts | May need rebase on upstream changes |
+
+## Credits
+
+Fork of [robertkirkman/termux-generator](https://github.com/robertkirkman/termux-generator)
+
+Built on [Termux](https://termux.dev/) by Fredrik Fornwall and contributors.
