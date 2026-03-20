@@ -1,6 +1,5 @@
 #!/bin/bash
 set -e -u -o pipefail
-# Wechsel zum Verzeichnis, in dem das Skript liegt
 
 cd "$(realpath "$(dirname "$0")")"
 
@@ -9,7 +8,7 @@ TERMUX_APP__PACKAGE_NAME="com.termux"
 TERMUX_APP_TYPE="f-droid"
 DO_NOT_CLEAN=""
 TERMUX_GENERATOR_PLUGIN=""
-ADDITIONAL_PACKAGES="xkeyboard-config" # for termux-x11-nightly which is always preinstalled
+ADDITIONAL_PACKAGES="xkeyboard-config"
 BOOTSTRAP_ARCHITECTURES=""
 DISABLE_BOOTSTRAP_SECOND_STAGE=""
 ENABLE_SSH_SERVER=""
@@ -28,7 +27,6 @@ DISABLE_X11=""
 source "$TERMUX_GENERATOR_HOME/scripts/termux_generator_utils.sh"
 source "$TERMUX_GENERATOR_HOME/scripts/termux_generator_steps.sh"
 
-# Anzeige der Hilfe
 show_usage() {
     echo
     echo "Usage: build-termux.sh [options]"
@@ -38,47 +36,26 @@ show_usage() {
     echo "Options:"
     echo " -h, --help                       Show this help."
     echo " -a, --add PKG_LIST               Include additional packages in bootstrap archive."
-    echo " -n, --name APP_NAME              Specify TERMUX_APP__PACKAGE_NAME name."
-    echo " -t, --type APP_TYPE              Specify the Termux project to fork [f-droid, play-store]. Defaults to f-droid."
-    echo " --architectures ARCH_LIST        Specify the bootstrap architectures to include in a comma-separated list."
-    echo " -p, --plugin PLUGIN              Specify a plugin from the plugins folder to apply during building."
-    echo " --disable-bootstrap-second-stage Disable the automatic execution of termux-bootstrap-second-stage.sh."
-    echo "                                  Currently, this option only affects builds of type f-droid."
-    echo " --enable-ssh-server              Bundle an SSH server with the default password 'changeme'."
-    echo "                                  The SSH server will start when the main Termux Activity is launched."
-    echo "                                  NOTE: This option depends on the bootstrap second stage,"
-    echo "                                  therefore '--disable-bootstrap-second-stage' will prevent it"
-    echo "                                  from working, and since builds of type play-store do not implement"
-    echo "                                  the bootstrap second stage, currently,"
-    echo "                                  this option only affects builds of type f-droid."
-    echo "                                  This can be done on a headless device using the command"
-    echo "                                  'adb [-s ID] shell am start -n [APP_NAME]/.app.TermuxActivity'."
-    echo "                                  If you would like automatic setup of Termux:Boot as well so that"
-    echo "                                  Termux and its SSH server both launch automatically at device unlock,"
-    echo "                                  install Termux:Boot also and launch it at least once, using"
-    echo "                                  'adb [-s ID] shell am start -n [APP_NAME].boot/.BootActivity'!"
-    echo " --disable-bootstrap              Disable building the bootstrap(s)."
-    echo " --disable-terminal               Disable building the Terminal app."
-    echo " --disable-tasker                 Disable building the Tasker addon app."
-    echo "                                  Currently, this option only affects builds of type f-droid."
-    echo " --disable-float                  Disable building the Float addon app."
-    echo "                                  Currently, this option only affects builds of type f-droid."
-    echo " --disable-widget                 Disable building the Widget addon app."
-    echo "                                  Currently, this option only affects builds of type f-droid."
-    echo " --disable-api                    Disable building the API addon app."
-    echo "                                  Currently, this option only affects builds of type f-droid."
-    echo " --disable-boot                   Disable building the Boot addon app."
-    echo "                                  Currently, this option only affects builds of type f-droid."
-    echo " --disable-styling                Disable building the Styling addon app."
-    echo "                                  Currently, this option only affects builds of type f-droid."
-    echo " --disable-gui                    Disable building the GUI addon app."
-    echo "                                  Currently, this option only affects builds of type f-droid."
-    echo " --disable-x11                    Disable building the X11 addon app."
+    echo " -n, --name APP_NAME              Specify package name."
+    echo " -t, --type APP_TYPE              Build type [f-droid, play-store]. Defaults to f-droid."
+    echo " --architectures ARCH_LIST        Bootstrap architectures (comma-separated)."
+    echo " -p, --plugin PLUGIN              Apply plugin from plugins folder."
+    echo " --disable-bootstrap-second-stage Disable bootstrap second stage (f-droid only)."
+    echo " --enable-ssh-server              Bundle SSH server with default password 'changeme'."
+    echo " --disable-bootstrap              Skip building bootstraps."
+    echo " --disable-terminal               Skip building Terminal app."
+    echo " --disable-tasker                 Skip Termux:Tasker (f-droid only)."
+    echo " --disable-float                  Skip Termux:Float (f-droid only)."
+    echo " --disable-widget                 Skip Termux:Widget (f-droid only)."
+    echo " --disable-api                    Skip Termux:API (f-droid only)."
+    echo " --disable-boot                   Skip Termux:Boot (f-droid only)."
+    echo " --disable-styling                Skip Termux:Styling (f-droid only)."
+    echo " --disable-gui                    Skip Termux:GUI (f-droid only)."
+    echo " --disable-x11                    Skip Termux:X11."
     echo " -d, --dirty                      Build without cleaning previous artifacts."
     echo
 }
 
-# Argumente verarbeiten
 while (($# > 0)); do
     case "$1" in
         -d|--dirty)
@@ -126,7 +103,7 @@ while (($# > 0)); do
                 exit 1
             fi
             ;;
-		--architectures)
+        --architectures)
             if [ $# -gt 1 ] && [ -n "$2" ] && [[ $2 != -* ]]; then
                 BOOTSTRAP_ARCHITECTURES="$2"
                 shift 1
@@ -192,7 +169,6 @@ while (($# > 0)); do
 done
 
 if [ -z "${DO_NOT_CLEAN}" ]; then
-    # Validierung und Ausführung
     check_names
     clean_docker
     clean_artifacts
