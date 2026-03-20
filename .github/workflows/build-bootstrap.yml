@@ -21,20 +21,54 @@ on:
 env:
   ARCHITECTURE: aarch64
   TERMUX_TYPE: f-droid
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  FULL_PACKAGES: "git,curl,wget,nano,tmux,htop,jq,ca-certificates,openssl-tool,openssh,screen,pacman,nodejs-lts,python,build-essential,clang,cmake,make,autoconf,automake,libtool,pkg-config,gradle,openjdk-17,binutils,gdb,unzip,p7zip,sqlite"
-  MINIMAL_PACKAGES: "git,curl,wget,nano,tmux,htop,jq,ca-certificates,openssl-tool,openssh,screen,pacman"
+  # BUG 8 FIX: initialise to empty so the variable is always defined
+  ENABLE_SSH: ""
+  # NOTE: FORCE_JAVASCRIPT_ACTIONS_TO_NODE24 moved to a dedicated step (BUG 7 FIX)
+  FULL_PACKAGES: "git,curl,wget,nano,tmux,htop,jq,ca-certificates,openssl-tool,openssh,screen,nodejs-lts,python,build-essential,clang,cmake,make,autoconf,automake,libtool,pkg-config,gradle,openjdk-17,binutils,gdb,unzip,p7zip,sqlite"
+  # BUG 2 FIX: removed 'pacman' — it is not a Termux package; also removed from MINIMAL below
+  MINIMAL_PACKAGES: "git,curl,wget,nano,tmux,htop,jq,ca-certificates,openssl-tool,openssh,screen"
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    # BUG 4 FIX: pinned to 22.04 — android-sdk apt packages work here reliably
+    runs-on: ubuntu-22.04
+    # BUG 6 FIX: hard cap at 6 hours to avoid silent quota drain on hung builds
+    timeout-minutes: 360
     permissions:
       contents: write
-    
+
     steps:
+      # ── 0. Force Node 24 for actions runtime (BUG 7 FIX) ────────────────────
+      - name: Configure actions runtime
+        shell: bash
+        run: echo "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true" >> "$GITHUB_ENV"
+
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
       - name: Clone repository
         uses: actions/checkout@v4
-      
+
+      # ── 2. System dependencies ───────────────────────────────────────────────
+      # BUG 5 FIX: explicitly install unzip (required by the verify step)
+      - name: Install system dependencies
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            openjdk-17-jdk \
+            git \
+            patch \
+            unzip \
+            android-sdk \
+            sdkmanager
+
+          # BUG 4 FIX: export Android SDK paths so build-termux.sh finds them
+          echo "ANDROID_SDK_ROOT=/usr/lib/android-sdk" >> "$GITHUB_ENV"
+          echo "JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))" >> "$GITHUB_ENV"
+          sudo chown -R "$(whoami)" /usr/lib/android-sdk
+          yes | sdkmanager --licenses 2>/dev/null || true
+
+      # ── 3. Cache termux-packages build ───────────────────────────────────────
+      # BUG 3 FIX: key on file hash + arch, not run_number (which is always unique)
       - name: Cache termux-packages build
         uses: actions/cache@v4
         with:
@@ -42,28 +76,38 @@ jobs:
             ~/.termux-build
             termux-packages/build
             termux-packages/output
-          key: termux-${{ env.ARCHITECTURE }}-${{ github.run_number }}
-          restore-keys: termux-${{ env.ARCHITECTURE }}-
-      
+          key: termux-${{ env.ARCHITECTURE }}-${{ hashFiles('build-termux.sh') }}
+          restore-keys: |
+            termux-${{ env.ARCHITECTURE }}-
+
+      # ── 4. Set package name ──────────────────────────────────────────────────
       - name: Set package name
-        run: echo "TERMUX_APP__PACKAGE_NAME=--name ${{ github.event.inputs.package_name }}" >> $GITHUB_ENV
-      
-      - name: Set packages (full or minimal)
+        shell: bash
+        run: echo "TERMUX_APP__PACKAGE_NAME=--name ${{ github.event.inputs.package_name }}" >> "$GITHUB_ENV"
+
+      # ── 5. Set packages (full or minimal) ────────────────────────────────────
+      - name: Set packages
         id: bootstrap_type
+        shell: bash
         run: |
           if [ "${{ github.event.inputs.minimal_bootstrap }}" = "true" ]; then
-            echo "ADDITIONAL_PACKAGES=--add $MINIMAL_PACKAGES" >> $GITHUB_ENV
-            echo "BOOTSTRAP_TYPE=minimal" >> $GITHUB_OUTPUT
+            echo "ADDITIONAL_PACKAGES=--add $MINIMAL_PACKAGES" >> "$GITHUB_ENV"
+            echo "BOOTSTRAP_TYPE=minimal" >> "$GITHUB_OUTPUT"
           else
-            echo "ADDITIONAL_PACKAGES=--add $FULL_PACKAGES" >> $GITHUB_ENV
-            echo "BOOTSTRAP_TYPE=full" >> $GITHUB_OUTPUT
+            echo "ADDITIONAL_PACKAGES=--add $FULL_PACKAGES" >> "$GITHUB_ENV"
+            echo "BOOTSTRAP_TYPE=full" >> "$GITHUB_OUTPUT"
           fi
-      
-      - name: Set SSH server
-        if: "${{ github.event.inputs.ssh_server == 'true' }}"
-        run: echo "ENABLE_SSH=--enable-ssh-server" >> $GITHUB_ENV
-      
+
+      # ── 6. Set SSH server ────────────────────────────────────────────────────
+      # BUG 1 FIX: removed quotes around the expression — "false" string is truthy
+      - name: Set SSH server flag
+        if: github.event.inputs.ssh_server == 'true'
+        shell: bash
+        run: echo "ENABLE_SSH=--enable-ssh-server" >> "$GITHUB_ENV"
+
+      # ── 7. Build ─────────────────────────────────────────────────────────────
       - name: Build Bootstrap
+        shell: bash
         run: |
           ./build-termux.sh \
             $TERMUX_APP__PACKAGE_NAME \
@@ -80,8 +124,10 @@ jobs:
             --disable-styling \
             --disable-gui \
             --disable-x11
-      
+
+      # ── 8. List built files ──────────────────────────────────────────────────
       - name: List all built files
+        shell: bash
         run: |
           echo "=== Files in root directory ==="
           ls -lah *.apk *.zip 2>/dev/null || echo "No apk/zip in root"
@@ -91,8 +137,10 @@ jobs:
           echo ""
           echo "=== All zip files ==="
           find . -maxdepth 3 -name "*.zip" -type f 2>/dev/null || echo "No zips found"
-      
+
+      # ── 9. Check bootstrap generation ────────────────────────────────────────
       - name: Check bootstrap generation
+        shell: bash
         run: |
           echo "Checking for bootstrap ZIPs..."
           if ! find . -maxdepth 3 -name "bootstrap-*.zip" 2>/dev/null | grep -q .; then
@@ -103,41 +151,44 @@ jobs:
           fi
           echo "✅ Bootstrap files found!"
           find . -maxdepth 3 -name "bootstrap-*.zip" -exec ls -lah {} \;
-      
+
+      # ── 10. Verify no com.termux references ──────────────────────────────────
+      # BUG 5 FIX: unzip is now guaranteed installed (step 2)
       - name: Verify no com.termux references
+        shell: bash
         run: |
           for z in $(find . -maxdepth 3 -name "bootstrap-*.zip"); do
             [ -f "$z" ] || continue
             echo "Checking: $z"
-            mkdir -p verify_$$
-            unzip -q "$z" -d verify_$$
-            if grep -r "com\.termux" verify_$$/ 2>/dev/null; then
+            mkdir -p "verify_$$"
+            unzip -q "$z" -d "verify_$$"
+            if grep -r "com\.termux" "verify_$$/" 2>/dev/null; then
               echo "❌ FAILED: Found com.termux references in $z!"
-              rm -rf verify_$$
+              rm -rf "verify_$$"
               exit 1
             fi
             echo "✅ Clean: $z"
-            rm -rf verify_$$
+            rm -rf "verify_$$"
           done
-      
+
+      # ── 11. Prepare artifacts ────────────────────────────────────────────────
       - name: Prepare artifacts for release
+        shell: bash
         run: |
           mkdir -p release-artifacts
-          
-          # Move bootstraps from wherever they are to release-artifacts
+
           find . -maxdepth 3 -name "bootstrap-*.zip" -exec cp {} release-artifacts/ \;
-          
-          # Also include any APKs (for completeness)
           find . -maxdepth 3 -name "*.apk" -exec cp {} release-artifacts/ \; 2>/dev/null || true
-          
+
           echo "=== Final release artifacts ==="
           ls -lah release-artifacts/
-          
+
           if [ -z "$(ls -A release-artifacts/)" ]; then
             echo "❌ ERROR: No artifacts to release!"
             exit 1
           fi
-      
+
+      # ── 12. Upload artifacts ─────────────────────────────────────────────────
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -145,7 +196,8 @@ jobs:
           path: release-artifacts/*
           retention-days: 90
           if-no-files-found: error
-      
+
+      # ── 13. Create release ───────────────────────────────────────────────────
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
@@ -154,16 +206,16 @@ jobs:
           files: release-artifacts/*
           body: |
             ## Bootstrap for `${{ github.event.inputs.package_name }}`
-            
+
             | Setting | Value |
             |---------|-------|
             | Package | `${{ github.event.inputs.package_name }}` |
             | Arch | `${{ env.ARCHITECTURE }}` |
             | Type | `${{ steps.bootstrap_type.outputs.BOOTSTRAP_TYPE }}` |
             | SSH Server | `${{ github.event.inputs.ssh_server }}` |
-            
+
             **Extract to:** `/data/data/${{ github.event.inputs.package_name }}/files/`
-            
+
             **Build Info:**
             - Run #${{ github.run_number }}
           draft: false
