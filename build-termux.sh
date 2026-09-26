@@ -178,7 +178,16 @@ if [ -z "${DO_NOT_CLEAN}" ]; then
         install_plugin
     fi
     patch_bootstraps
-    patch_apps
+    # Only patch apps when at least one app will be built —
+    # app patches target termux-app/x11 sources that drift upstream
+    # and are irrelevant for bootstrap-only builds.
+    if [ -z "${DISABLE_TERMINAL}" ] || [ -z "${DISABLE_X11}" ] || \
+       [ -z "${DISABLE_TASKER}" ] || [ -z "${DISABLE_FLOAT}" ] || \
+       [ -z "${DISABLE_WIDGET}" ] || [ -z "${DISABLE_API}" ] || \
+       [ -z "${DISABLE_BOOT}" ] || [ -z "${DISABLE_STYLING}" ] || \
+       [ -z "${DISABLE_GUI}" ]; then
+        patch_apps
+    fi
     if [ -z "${DISABLE_X11}" ]; then
         build_termux_x11
         move_termux_x11_deb
