@@ -70,7 +70,7 @@ diff --git a/packages/util-linux/build.sh b/packages/util-linux/build.sh
  TERMUX_PKG_EXTRA_CONFIGURE_ARGS="
  ac_cv_func_setns=yes
  ac_cv_func_statx=no
-+ac_cv_func_pidfd_open=no
++ac_cv_type_struct_nsfs_file_handle=no
  ac_cv_func_unshare=yes
  ac_cv_func_uselocale=no
  ac_cv_type_struct_statx=no
