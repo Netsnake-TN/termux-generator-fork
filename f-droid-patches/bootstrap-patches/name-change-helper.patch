@@ -1,6 +1,6 @@
 --- a/packages/termux-tools/build.sh
 +++ b/packages/termux-tools/build.sh
-@@ -21,6 +21,15 @@ TERMUX_PKG_DEPENDS="bzip2, coreutils, curl, dash, diffutils, findutils, gawk, gr
+@@ -22,6 +22,15 @@
  TERMUX_PKG_RECOMMENDS="ed, dos2unix, inetutils, net-tools, patch, unzip"
  
  termux_step_pre_configure() {
@@ -18,7 +18,7 @@
  
 --- a/packages/termux-am/build.sh
 +++ b/packages/termux-am/build.sh
-@@ -13,6 +13,9 @@ TERMUX_PKG_CONFLICTS="termux-tools (<< 0.51)"
+@@ -12,6 +12,9 @@
  _GRADLE_VERSION=8.10.2
  
  termux_step_post_get_source() {
@@ -26,40 +26,24 @@
 +	replace_termux_name "$TERMUX_PKG_SRCDIR" "$TERMUX_APP__PACKAGE_NAME"
 +	migrate_termux_folder_tree "$TERMUX_PKG_SRCDIR" "$TERMUX_APP__PACKAGE_NAME"
  	sed -i'' -E -e "s|\@TERMUX_PREFIX\@|${TERMUX_PREFIX}|g" "$TERMUX_PKG_SRCDIR/am-libexec-packaged"
- 	sed -i'' -E -e "s|\@TERMUX_APP_PACKAGE\@|${TERMUX_APP_PACKAGE}|g" "$TERMUX_PKG_SRCDIR/app/src/main/java/com/x11/termux/test/termuxam/FakeContext.java"
+ 	sed -i'' -E -e "s|\@TERMUX_APP_PACKAGE\@|${TERMUX_APP_PACKAGE}|g" "$TERMUX_PKG_SRCDIR/app/src/main/java/com/termux/termuxam/FakeContext.java"
  }
-
 --- a/packages/termux-auth/build.sh
 +++ b/packages/termux-auth/build.sh
-@@ -10,6 +10,11 @@ TERMUX_PKG_EXTRA_CONFIGURE_ARGS="
- TERMUX_PKG_AUTO_UPDATE=true
+@@ -12,5 +12,11 @@
+ TERMUX_PKG_REPLACES="termux-auth-dev"
  
- termux_step_post_get_source() {
+ termux_step_pre_configure() {
 +	. "$TERMUX_SCRIPTDIR/scripts/termux_generator_utils.sh"
 +	for f in termux-auth.c termux-auth.h.in; do
 +		if [ -f "$TERMUX_PKG_SRCDIR/$f" ]; then
 +			replace_termux_name "$TERMUX_PKG_SRCDIR/$f" "$TERMUX_APP__PACKAGE_NAME"
 +		fi
 +	done
- 	sed -i 's/TERMUX_HOME/TERMUX_HOME_TEMPLATE/g' termux-auth.c
- 	sed -i 's/TERMUX_PREFIX/TERMUX_PREFIX_TEMPLATE/g' termux-auth.c
+ 	CPPFLAGS+=" -DTERMUX_HOME=\\\"${TERMUX_ANDROID_HOME}\\\" -DTERMUX_PREFIX=\\\"${TERMUX_PREFIX}\\\""
  }
-
---- a/packages/termux-exec/build.sh
-+++ b/packages/termux-exec/build.sh
-@@ -8,3 +8,9 @@ TERMUX_PKG_DEPENDS="libc++"
- TERMUX_PKG_AUTO_UPDATE=true
- TERMUX_PKG_UPDATE_TAG_TYPE="latest-release-tag"
- TERMUX_PKG_BUILD_IN_SRC=true
-+
-+termux_step_post_get_source() {
-+	. "$TERMUX_SCRIPTDIR/scripts/termux_generator_utils.sh"
-+	replace_termux_name "$TERMUX_PKG_SRCDIR" "$TERMUX_APP__PACKAGE_NAME"
-+}
-
 diff --git a/packages/command-not-found/name-change-helper.patch b/packages/command-not-found/name-change-helper.patch
 new file mode 100644
-index 0000000..0250f2e
 --- /dev/null
 +++ b/packages/command-not-found/name-change-helper.patch
 @@ -0,0 +1,16 @@
@@ -78,4 +62,4 @@ index 0000000..0250f2e
 ++const TERMUX_PREFIX = "/data/data/com.termux/files/usr";
 + 
 + if (!TERMUX_SCRIPTDIR) {
-+   throw new Error("TERMUX_PKG_CACHEDIR environment variable is not defined");
++   throw new Error("TERMUX_SCRIPTDIR environment variable is not defined");
