@@ -63,3 +63,14 @@ new file mode 100644
 + 
 + if (!TERMUX_SCRIPTDIR) {
 +   throw new Error("TERMUX_SCRIPTDIR environment variable is not defined");
+diff --git a/packages/util-linux/build.sh b/packages/util-linux/build.sh
+--- a/packages/util-linux/build.sh
++++ b/packages/util-linux/build.sh
+@@ -29,6 +29,7 @@
+ TERMUX_PKG_EXTRA_CONFIGURE_ARGS="
+ ac_cv_func_setns=yes
+ ac_cv_func_statx=no
++ac_cv_func_pidfd_open=no
+ ac_cv_func_unshare=yes
+ ac_cv_func_uselocale=no
+ ac_cv_type_struct_statx=no
